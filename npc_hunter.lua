@@ -20,7 +20,7 @@ local TARGET_PLACE_ID = 77747658251236
 
 local SCAN_INTERVAL = 3
 local SCANS_BEFORE_JUMP = 2
-local MIN_HOP_DELAY = 5          -- ← CHANGED: Minimum 5 seconds before hopping
+local MIN_HOP_DELAY = 10         -- ← CHANGED: Minimum 5 seconds before hopping
 local MAX_HOP_DELAY = 8          -- ← NEW: Random delay up to 8 seconds (optional)
 
 -- ==================== TRACK SENT NOTIFICATIONS ====================
