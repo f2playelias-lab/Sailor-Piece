@@ -1,5 +1,5 @@
 --[[
-    NPC HUNTER — FULLY FIXED
+    NPC HUNTER — NO DUPLICATES (FIXED)
     GitHub: https://raw.githubusercontent.com/f2playelias-lab/Sailor-Piece/refs/heads/main/npc_hunter.lua
 ]]
 
@@ -12,7 +12,6 @@ local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
 local TeleportService = game:GetService("TeleportService")
 local HttpService = game:GetService("HttpService")
-local RunService = game:GetService("RunService")
 
 -- ==================== CONFIGURATION ====================
 local SCRIPT_URL = "https://raw.githubusercontent.com/f2playelias-lab/Sailor-Piece/refs/heads/main/npc_hunter.lua"
@@ -22,6 +21,11 @@ local TARGET_PLACE_ID = 77747658251236
 local SCAN_INTERVAL = 3
 local SCANS_BEFORE_JUMP = 2
 local TELEPORT_DELAY = 2
+
+-- ==================== TRACK SENT NOTIFICATIONS (PREVENTS DUPLICATES) ====================
+local sentThisSession = {}      -- Track which NPCs were sent this session
+local sessionResetTime = 0
+local hopSentThisSession = false
 
 -- ==================== HTTP SETUP ====================
 local httpRequest = nil
@@ -36,11 +40,12 @@ elseif http and http.request then
     httpRequest = http.request
     print("[HTTP] Oxygen U detected")
 else
-    print("[HTTP] ⚠️ WARNING: No HTTP function found! Discord will not work.")
+    print("[HTTP] ⚠️ WARNING: No HTTP function found!")
 end
 
--- ==================== DISCORD FUNCTION ====================
+-- ==================== DISCORD FUNCTION (WITH DUPLICATE PROTECTION) ====================
 local lastSendTime = 0
+local lastMessageHash = ""
 
 local function sendDiscord(message, isJump)
     if not httpRequest then
@@ -48,10 +53,19 @@ local function sendDiscord(message, isJump)
         return false
     end
     
+    -- Create a hash of the message to prevent exact duplicates
+    local messageHash = tostring(#message) .. message:sub(1, 50)
+    if messageHash == lastMessageHash then
+        print("[Discord] Duplicate message blocked")
+        return false
+    end
+    lastMessageHash = messageHash
+    
+    -- Rate limiting
     local now = os.time()
-    if now - lastSendTime < 10 then
+    if now - lastSendTime < 5 then
         print("[Discord] Rate limited, waiting...")
-        task.wait(5)
+        task.wait(3)
     end
     lastSendTime = now
     
@@ -71,12 +85,20 @@ local function sendDiscord(message, isJump)
     end)
     
     if success then
-        print("[Discord] ✅ Sent: " .. message:sub(1, 50))
+        print("[Discord] ✅ Sent")
         return true
     else
         print("[Discord] ❌ Failed: " .. tostring(err))
         return false
     end
+end
+
+-- ==================== RESET SESSION TRACKING ====================
+local function resetSessionTracking()
+    sentThisSession = {}
+    hopSentThisSession = false
+    sessionResetTime = os.time()
+    print("[Session] Tracking reset")
 end
 
 -- ==================== CHECK NPCS ====================
@@ -87,38 +109,39 @@ local function checkForNPCs()
     local npcFolder = workspace:FindFirstChild("NPCs")
     
     if not npcFolder then
-        print("[Scan] No 'NPCs' folder found in workspace")
+        print("[Scan] No 'NPCs' folder found")
         return found
     end
     
-    print("[Scan] NPCs folder found! Scanning children...")
-    
     for _, child in ipairs(npcFolder:GetChildren()) do
         local childName = child.Name
-        print("[Scan] Checking: " .. childName)
         
         -- Check for Kraken
         if childName == "Kraken" then
             local krakenLow = child:FindFirstChild("kraken_low")
             if krakenLow then
-                print("[✅] Kraken (Low) found!")
-                table.insert(found, "Kraken (Low)")
+                if not sentThisSession["Kraken (Low)"] then
+                    table.insert(found, "Kraken (Low)")
+                end
             else
-                print("[✅] Kraken found!")
-                table.insert(found, "Kraken")
+                if not sentThisSession["Kraken"] then
+                    table.insert(found, "Kraken")
+                end
             end
         end
         
         -- Check for Cosmic Being
         if childName == "CosmicBeingBoss_Normal" or childName == "CosmicBeingBoss" then
-            print("[✅] Cosmic Being Boss found!")
-            table.insert(found, "Cosmic Being Boss")
+            if not sentThisSession["Cosmic Being Boss"] then
+                table.insert(found, "Cosmic Being Boss")
+            end
         end
         
         -- Check for Sea Serpent
         if childName == "Sea Serpent" or childName == "SeaSerpent" then
-            print("[✅] Sea Serpent found!")
-            table.insert(found, "Sea Serpent")
+            if not sentThisSession["Sea Serpent"] then
+                table.insert(found, "Sea Serpent")
+            end
         end
     end
     
@@ -131,20 +154,23 @@ local function jumpToTargetGame()
     print("[Jump] No NPCs found! Jumping to game: " .. TARGET_PLACE_ID)
     print(string.rep("=", 60))
     
-    -- Send Discord notification
-    local playerCount = #Players:GetPlayers()
-    local message = string.format(
-        "🔄 **NO NPCS FOUND — JUMPING** 🔄\n" ..
-        "👤 Player: %s\n" ..
-        "👥 Players in server: %d\n" ..
-        "🎮 Jumping to game ID: %d\n" ..
-        "🌐 Leaving server: %s",
-        LocalPlayer.Name,
-        playerCount,
-        TARGET_PLACE_ID,
-        string.sub(game.JobId, 1, 16)
-    )
-    sendDiscord(message, true)
+    -- Only send hop notification once per session
+    if not hopSentThisSession then
+        hopSentThisSession = true
+        local playerCount = #Players:GetPlayers()
+        local message = string.format(
+            "🔄 **NO NPCS FOUND — JUMPING** 🔄\n" ..
+            "👤 Player: %s\n" ..
+            "👥 Players in server: %d\n" ..
+            "🎮 Jumping to game ID: %d\n" ..
+            "🌐 Leaving server: %s",
+            LocalPlayer.Name,
+            playerCount,
+            TARGET_PLACE_ID,
+            string.sub(game.JobId, 1, 16)
+        )
+        sendDiscord(message, true)
+    end
     
     -- Show notification
     local gui = Instance.new("ScreenGui")
@@ -176,7 +202,6 @@ local function jumpToTargetGame()
     
     if not success then
         print("[Jump] Teleport failed: " .. tostring(err))
-        -- Fallback method
         pcall(function()
             TeleportService:QueueTeleport(TARGET_PLACE_ID, LocalPlayer)
             task.wait(0.5)
@@ -185,8 +210,11 @@ local function jumpToTargetGame()
     end
 end
 
--- ==================== SEND FOUND NOTIFICATION ====================
+-- ==================== SEND FOUND NOTIFICATION (ONCE PER NPC PER SESSION) ====================
 local function sendFoundNotification(npcName)
+    -- Mark as sent so we don't send again this session
+    sentThisSession[npcName] = true
+    
     local playerCount = #Players:GetPlayers()
     local serverTime = os.date("%H:%M:%S")
     
@@ -209,15 +237,11 @@ local function sendFoundNotification(npcName)
         string.sub(game.JobId, 1, 16)
     )
     
-    sendDiscord(message, false)
+    print(string.rep("!", 50))
+    print(npcName .. " FOUND! - Sending Discord...")
+    print(string.rep("!", 50))
     
-    -- Also print to console
-    print(string.rep("!", 50))
-    print(npcName .. " FOUND!")
-    print("Player: " .. LocalPlayer.Name)
-    print("Players: " .. playerCount)
-    print("Server: " .. game.JobId)
-    print(string.rep("!", 50))
+    sendDiscord(message, false)
 end
 
 -- ==================== AUTO-EXECUTE SETUP ====================
@@ -233,43 +257,43 @@ local function setupAutoExecute()
     end
     
     if queue_func then
-        LocalPlayer.OnTeleport:Connect(function()
+        -- Remove any existing connection to prevent duplicates
+        if _G.teleportConnection then
+            _G.teleportConnection:Disconnect()
+        end
+        _G.teleportConnection = LocalPlayer.OnTeleport:Connect(function()
             print("[Auto-Execute] Teleport detected! Reloading script...")
             queue_func('loadstring(game:HttpGet("' .. SCRIPT_URL .. '"))()')
         end)
-        print("[Auto-Execute] ✅ ACTIVE — Will reload after teleport")
+        print("[Auto-Execute] ✅ ACTIVE")
     else
-        print("[Auto-Execute] ❌ INACTIVE — queue_on_teleport not available")
-        print("[Auto-Execute] You will need to re-run the script manually after teleport")
+        print("[Auto-Execute] ❌ INACTIVE")
     end
 end
 
 -- ==================== MAIN LOOP ====================
 local scanCount = 0
-local foundNPCs = {}
+local lastScanTime = 0
 
 local function main()
     print("=" .. string.rep("=", 60))
-    print("👾 NPC HUNTER — FULLY FIXED 👾")
+    print("👾 NPC HUNTER — NO DUPLICATES 👾")
     print(string.rep("=", 60))
-    print("[Targets]")
-    print("  🎯 Kraken (Low)")
-    print("  🎯 Cosmic Being Boss")
-    print("  🎯 Sea Serpent")
+    print("[Targets] Kraken | Cosmic Being | Sea Serpent")
     print(string.format("[Target Game ID] %d", TARGET_PLACE_ID))
-    print(string.format("[Scan Interval] %d seconds", SCAN_INTERVAL))
-    print(string.format("[Scans Before Jump] %d", SCANS_BEFORE_JUMP))
-    print(string.format("[HTTP] %s", httpRequest and "AVAILABLE ✅" or "NOT AVAILABLE ❌"))
+    print(string.format("[HTTP] %s", httpRequest and "✅" or "❌"))
     print("=" .. string.rep("=", 60))
+    
+    -- Reset session tracking on new server
+    resetSessionTracking()
     
     -- Setup auto-execute
     setupAutoExecute()
     
     -- Wait for game to load
-    print("[Init] Waiting 4 seconds for game to load...")
     task.wait(4)
     
-    -- On-screen status
+    -- On-screen status (brief)
     local statusGui = Instance.new("ScreenGui")
     statusGui.Name = "NPCHunterStatus"
     statusGui.ResetOnSpawn = false
@@ -290,7 +314,7 @@ local function main()
     statusText.Font = Enum.Font.GothamBold
     statusText.Parent = statusFrame
     
-    task.wait(3)
+    task.wait(2)
     statusFrame:Destroy()
     statusGui:Destroy()
     
@@ -302,37 +326,34 @@ local function main()
         local found = checkForNPCs()
         
         if #found > 0 then
-            -- NPC found!
+            -- NPC found - send once per NPC
             for _, npc in ipairs(found) do
                 sendFoundNotification(npc)
             end
-            print(string.format("[Result] ✅ Found %d NPC(s)! Staying in this server.", #found))
+            print(string.format("[Result] ✅ Found %d NPC(s)! Staying.", #found))
             scanCount = 0
             task.wait(SCAN_INTERVAL * 2)
         else
             -- No NPCs found
-            print("[Result] ❌ No NPCs found in this server.")
+            print("[Result] ❌ No NPCs found.")
             
             if scanCount >= SCANS_BEFORE_JUMP then
-                print(string.format("[Jump] %d scans with no results. Jumping...", SCANS_BEFORE_JUMP))
                 jumpToTargetGame()
-                break  -- Script ends, auto-execute will reload
+                break
             else
-                print(string.format("[Wait] Scanning again in %d seconds...", SCAN_INTERVAL))
                 task.wait(SCAN_INTERVAL)
             end
         end
     end
 end
 
--- Run the script with error handling
+-- Run with error handling
 local success, err = pcall(main)
 if not success then
-    print("[FATAL ERROR] " .. tostring(err))
-    print("[FATAL ERROR] Script crashed. Check your executor.")
+    print("[FATAL] " .. tostring(err))
 end
 
--- Keep script alive
+-- Keep alive
 while true do
     task.wait(1)
 end
