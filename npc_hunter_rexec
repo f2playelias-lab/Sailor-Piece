@@ -1,6 +1,5 @@
 -- NPC HUNTER — NO AUTO-EXECUTE
 -- You must manually re-run the script after each teleport
--- GitHub: https://raw.githubusercontent.com/f2playelias-lab/Sailor-Piece/refs/heads/main/npc_hunter.lua
 
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
@@ -190,18 +189,18 @@ local function main()
     print("Target: " .. TARGET_PLACE)
     print("NOTE: You must manually re-run the script after each teleport")
     print("=" .. string.rep("=", 50))
-    
+
     visitedServers[game.JobId] = true
     task.wait(4)
-    
+
     while true do
         scanCount = scanCount + 1
         local st = getServerTime()
         print(string.format("[Scan %d] Server: %s", scanCount, string.sub(game.JobId, 1, 16)))
         print(string.format("[Scan %d] Time: %s", scanCount, st))
-        
+
         local found = checkNPCs()
-        
+
         if #found > 0 then
             for _, npc in ipairs(found) do
                 sentNPCs[npc] = true
