@@ -1,9 +1,6 @@
 --[[
-    NPC HUNTER — WITH WORKING AUTO-EXECUTE
-    - Scans for: Kraken, Cosmic Being Boss, Sea Serpent
-    - Sends Discord webhook when found
-    - Teleports to target game (77747658251236) if nothing found
-    - AUTO-EXECUTES after teleport (Infinite Yield style)
+    NPC HUNTER — Sailor Piece (Kraken, Cosmic Being, Sea Serpent)
+    GitHub: https://raw.githubusercontent.com/f2playelias-lab/Sailor-Piece/refs/heads/main/npc_hunter.lua
 ]]
 
 local Players = game:GetService("Players")
@@ -11,19 +8,17 @@ local LocalPlayer = Players.LocalPlayer
 local TeleportService = game:GetService("TeleportService")
 local HttpService = game:GetService("HttpService")
 
--- ==================== AUTO-EXECUTE SETUP (MUST BE FIRST) ====================
+-- ==================== AUTO-EXECUTE SETUP ====================
 
--- IMPORTANT: Change this to YOUR script's raw URL
--- Upload this script to a GitHub Gist or Pastebin and put the raw URL here
-local SCRIPT_URL = "https://raw.githubusercontent.com/YOUR_USERNAME/YOUR_REPO/main/npc_hunter.lua"
+-- YOUR CORRECT GITHUB RAW URL
+local SCRIPT_URL = "https://raw.githubusercontent.com/f2playelias-lab/Sailor-Piece/refs/heads/main/npc_hunter.lua"
 
--- If you don't have a URL, the script will still work but you'll need to re-execute manually
-local USE_URL_AUTOEXECUTE = false  -- Set to true after uploading to a URL
+-- SET THIS TO TRUE
+local USE_URL_AUTOEXECUTE = true
 
 -- Detect executor's queue_on_teleport function
 local queue_on_teleport_func = nil
 
--- Check for different executors
 if syn and syn.queue_on_teleport then
     queue_on_teleport_func = syn.queue_on_teleport
     print("[Auto-Execute] Synapse X detected")
@@ -38,41 +33,24 @@ elseif krnl and krnl.queue_on_teleport then
     print("[Auto-Execute] Krnl detected")
 else
     print("[Auto-Execute] ⚠️ No queue_on_teleport found! Auto-execute will NOT work.")
-    print("[Auto-Execute] You will need to re-execute the script manually after teleport.")
 end
 
--- Set up the auto-execute teleport handler
 local teleportQueued = false
 
--- This function queues the script to run after teleport
 local function setupAutoExecute()
     if not queue_on_teleport_func then
-        print("[Auto-Execute] Cannot setup — no queue_on_teleport function")
         return false
     end
     
-    if USE_URL_AUTOEXECUTE and SCRIPT_URL and SCRIPT_URL ~= "" then
-        -- Method 1: Reload from URL (best for permanent scripts)
+    if USE_URL_AUTOEXECUTE and SCRIPT_URL then
         queue_on_teleport_func('loadstring(game:HttpGet("' .. SCRIPT_URL .. '"))()')
-        print("[Auto-Execute] Queued script reload from URL: " .. SCRIPT_URL)
+        print("[Auto-Execute] ✅ Queued reload from: " .. SCRIPT_URL)
         return true
-    else
-        -- Method 2: Reload the current script from memory (requires saving the source)
-        -- This only works if you have the script source in a variable
-        local currentSource = [[
--- AUTO-RELOADED SCRIPT
--- Copy your entire script here if you want local reloading
--- Or set USE_URL_AUTOEXECUTE = true and provide a URL
-print("[Auto-Execute] Script reloaded! But you need to put the full script source here.")
-print("[Auto-Execute] Please upload this script to a URL and set USE_URL_AUTOEXECUTE = true")
-]]
-        queue_on_teleport_func('loadstring(' .. HttpService:JSONEncode(currentSource) .. ')()')
-        print("[Auto-Execute] Queued local script reload (limited)")
-        return false
     end
+    return false
 end
 
--- Listen for teleport and queue the script
+-- Listen for teleport
 if queue_on_teleport_func then
     LocalPlayer.OnTeleport:Connect(function(state)
         if not teleportQueued then
@@ -81,14 +59,14 @@ if queue_on_teleport_func then
             setupAutoExecute()
         end
     end)
-    print("[Auto-Execute] ✅ Auto-execute is ACTIVE — Script will reload after teleport")
+    print("[Auto-Execute] ✅ ACTIVE — Script will auto-reload after teleport")
 else
-    print("[Auto-Execute] ❌ Auto-execute is INACTIVE — queue_on_teleport not available")
+    print("[Auto-Execute] ❌ INACTIVE — queue_on_teleport not available")
 end
 
 -- ==================== CONFIGURATION ====================
 local CONFIG = {
-    -- TARGET NPCs (YOUR 3 NPCS)
+    -- ALL 3 TARGET NPCs
     TARGETS = {
         {
             Name = "Kraken (Low)",
@@ -209,7 +187,6 @@ end
 local function checkNPC(target)
     local instance = nil
     
-    -- Try direct workspace.NPCs access
     pcall(function()
         local npcs = workspace:FindFirstChild("NPCs")
         if npcs then
@@ -226,7 +203,6 @@ local function checkNPC(target)
         end
     end)
     
-    -- Use custom check
     if not instance and target.Check then
         instance = target.Check()
     end
@@ -234,7 +210,7 @@ local function checkNPC(target)
     return instance ~= nil
 end
 
--- ==================== SEND DISCORD NOTIFICATIONS ====================
+-- ==================== DISCORD FUNCTIONS ====================
 local lastSend = {}
 local lastJumpSend = 0
 
@@ -351,7 +327,6 @@ local function jumpToTargetGame()
     task.wait(CONFIG.TELEPORT_DELAY)
     gui:Destroy()
     
-    -- Teleport to target game
     local success, err = pcall(function()
         TeleportService:Teleport(CONFIG.TARGET_PLACE_ID, LocalPlayer)
     end)
@@ -384,26 +359,57 @@ local function scanForNPCs()
     return found
 end
 
+-- ==================== ON-SCREEN STATUS ====================
+local function showStatus(message)
+    local gui = Instance.new("ScreenGui")
+    gui.Name = "NPCHunterStatus"
+    gui.ResetOnSpawn = false
+    gui.Parent = game:GetService("CoreGui")
+    
+    local frame = Instance.new("Frame")
+    frame.Size = UDim2.new(0, 450, 0, 50)
+    frame.Position = UDim2.new(0.5, -225, 0, 10)
+    frame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+    frame.BackgroundTransparency = 0.3
+    frame.Parent = gui
+    
+    local text = Instance.new("TextLabel")
+    text.Size = UDim2.new(1, 0, 1, 0)
+    text.Text = message
+    text.TextColor3 = Color3.fromRGB(0, 255, 0)
+    text.TextScaled = true
+    text.Font = Enum.Font.GothamBold
+    text.Parent = frame
+    
+    task.wait(3)
+    gui:Destroy()
+end
+
 -- ==================== MAIN LOOP ====================
 local scanCount = 0
 
 local function start()
     print("=" .. string.rep("=", 70))
-    print("👾 NPC HUNTER — WITH AUTO-EXECUTE 👾")
+    print("👾 NPC HUNTER — ALL 3 TARGETS (Kraken, Cosmic Being, Sea Serpent) 👾")
     print(string.rep("=", 70))
-    print("[Targets]")
     for _, target in ipairs(CONFIG.TARGETS) do
         print(string.format("  🎯 %s", target.Name))
     end
     print(string.format("[Target Game ID] %d", CONFIG.TARGET_PLACE_ID))
-    print(string.format("[Auto-Execute] %s", (queue_on_teleport_func and "ACTIVE" or "INACTIVE")))
+    print(string.format("[Auto-Execute URL] %s", SCRIPT_URL))
+    print(string.format("[Auto-Execute Status] %s", (queue_on_teleport_func and USE_URL_AUTOEXECUTE) and "ACTIVE ✅" or "INACTIVE ❌"))
     print("=" .. string.rep("=", 70))
     
+    showStatus("👾 NPC HUNTER ACTIVE — Scanning for Kraken, Cosmic Being, Sea Serpent")
     task.wait(CONFIG.SCAN_DELAY_ON_JOIN)
     
     while true do
         scanCount = scanCount + 1
+        local playerCount = getPlayerCount()
+        local serverTime = getServerTime()
+        
         print(string.format("\n[Scan #%d] Server: %s", scanCount, string.sub(game.JobId, 1, 20)))
+        print(string.format("[Scan #%d] Players: %d | Time: %s", scanCount, playerCount, serverTime))
         
         local found = scanForNPCs()
         
@@ -412,6 +418,8 @@ local function start()
             scanCount = 0
             task.wait(CONFIG.SCAN_INTERVAL * 2)
         else
+            print("[Result] ❌ No NPCs found.")
+            
             if scanCount >= CONFIG.SCANS_BEFORE_JUMP then
                 jumpToTargetGame()
                 break
