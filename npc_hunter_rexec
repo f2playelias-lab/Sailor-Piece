@@ -1,12 +1,13 @@
 -- NPC HUNTER — NO AUTO-EXECUTE
 -- You must manually re-run the script after each teleport
+-- URL: https://raw.githubusercontent.com/f2playelias-lab/Sailor-Piece/refs/heads/main/npc_hunter_rexec
 
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
 local TeleportService = game:GetService("TeleportService")
 local HttpService = game:GetService("HttpService")
 
-local SCRIPT_URL = "https://raw.githubusercontent.com/f2playelias-lab/Sailor-Piece/refs/heads/main/npc_hunter.lua"
+local SCRIPT_URL = "https://raw.githubusercontent.com/f2playelias-lab/Sailor-Piece/refs/heads/main/npc_hunter_rexec"
 
 local WEBHOOK_BOSS = "https://discord.com/api/webhooks/1497670528562106520/WD70NS5pQpu_yydzViBQlFmFlqWIPqkaxRW_y7PaYDhu4e10Nukc8pS5-jkDszB5stNM"
 local WEBHOOK_HOP = "https://discord.com/api/webhooks/1497670647768285204/3LSIn5KhjsF5u1C6jqX_DOf_D1p6J6B5o8JGa1uWMR0pykushvy7S5SV_Hj6Q4rX86ZJ"
