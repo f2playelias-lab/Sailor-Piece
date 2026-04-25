@@ -1,72 +1,60 @@
 --[[
-    NPC HUNTER — Sailor Piece (Kraken, Cosmic Being, Sea Serpent)
+    NPC HUNTER — PERSISTENT AUTO-EXECUTE (FIXED)
     GitHub: https://raw.githubusercontent.com/f2playelias-lab/Sailor-Piece/refs/heads/main/npc_hunter.lua
 ]]
 
+-- ==================== PREVENT DUPLICATE INSTANCES ====================
+if _G.NPC_HUNTER_RUNNING then
+    print("[NPC Hunter] Already running, skipping duplicate...")
+    return
+end
+_G.NPC_HUNTER_RUNNING = true
+
+-- ==================== AUTO-EXECUTE SETUP (PERSISTENT) ====================
+local SCRIPT_URL = "https://raw.githubusercontent.com/f2playelias-lab/Sailor-Piece/refs/heads/main/npc_hunter.lua"
+
+-- Detect queue_on_teleport for ALL executors
+local queue_on_teleport_func = nil
+local executor_name = "Unknown"
+
+if syn and syn.queue_on_teleport then
+    queue_on_teleport_func = syn.queue_on_teleport
+    executor_name = "Synapse X"
+elseif queue_on_teleport then
+    queue_on_teleport_func = queue_on_teleport
+    executor_name = "Standard"
+elseif fluxus and fluxus.queue_on_teleport then
+    queue_on_teleport_func = fluxus.queue_on_teleport
+    executor_name = "Fluxus"
+elseif krnl and krnl.queue_on_teleport then
+    queue_on_teleport_func = krnl.queue_on_teleport
+    executor_name = "Krnl"
+elseif script_context and script_context.queue_on_teleport then
+    queue_on_teleport_func = script_context.queue_on_teleport
+    executor_name = "ScriptWare"
+end
+
+-- Set up PERSISTENT auto-execute (works every time)
+if queue_on_teleport_func then
+    -- Remove the one-time flag — queue EVERY time
+    LocalPlayer.OnTeleport:Connect(function(state)
+        print("[Auto-Execute] Teleport detected! Queueing script reload...")
+        queue_on_teleport_func('loadstring(game:HttpGet("' .. SCRIPT_URL .. '"))()')
+    end)
+    print("[Auto-Execute] ✅ PERSISTENT auto-execute ACTIVE (" .. executor_name .. ")")
+else
+    print("[Auto-Execute] ❌ INACTIVE — queue_on_teleport not available for " .. executor_name)
+end
+
+-- ==================== SERVICES ====================
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
 local TeleportService = game:GetService("TeleportService")
 local HttpService = game:GetService("HttpService")
-
--- ==================== AUTO-EXECUTE SETUP ====================
-
--- YOUR CORRECT GITHUB RAW URL
-local SCRIPT_URL = "https://raw.githubusercontent.com/f2playelias-lab/Sailor-Piece/refs/heads/main/npc_hunter.lua"
-
--- SET THIS TO TRUE
-local USE_URL_AUTOEXECUTE = true
-
--- Detect executor's queue_on_teleport function
-local queue_on_teleport_func = nil
-
-if syn and syn.queue_on_teleport then
-    queue_on_teleport_func = syn.queue_on_teleport
-    print("[Auto-Execute] Synapse X detected")
-elseif queue_on_teleport then
-    queue_on_teleport_func = queue_on_teleport
-    print("[Auto-Execute] Standard queue_on_teleport detected")
-elseif fluxus and fluxus.queue_on_teleport then
-    queue_on_teleport_func = fluxus.queue_on_teleport
-    print("[Auto-Execute] Fluxus detected")
-elseif krnl and krnl.queue_on_teleport then
-    queue_on_teleport_func = krnl.queue_on_teleport
-    print("[Auto-Execute] Krnl detected")
-else
-    print("[Auto-Execute] ⚠️ No queue_on_teleport found! Auto-execute will NOT work.")
-end
-
-local teleportQueued = false
-
-local function setupAutoExecute()
-    if not queue_on_teleport_func then
-        return false
-    end
-    
-    if USE_URL_AUTOEXECUTE and SCRIPT_URL then
-        queue_on_teleport_func('loadstring(game:HttpGet("' .. SCRIPT_URL .. '"))()')
-        print("[Auto-Execute] ✅ Queued reload from: " .. SCRIPT_URL)
-        return true
-    end
-    return false
-end
-
--- Listen for teleport
-if queue_on_teleport_func then
-    LocalPlayer.OnTeleport:Connect(function(state)
-        if not teleportQueued then
-            teleportQueued = true
-            print("[Auto-Execute] Teleport detected! Queueing script reload...")
-            setupAutoExecute()
-        end
-    end)
-    print("[Auto-Execute] ✅ ACTIVE — Script will auto-reload after teleport")
-else
-    print("[Auto-Execute] ❌ INACTIVE — queue_on_teleport not available")
-end
+local RunService = game:GetService("RunService")
 
 -- ==================== CONFIGURATION ====================
 local CONFIG = {
-    -- ALL 3 TARGET NPCs
     TARGETS = {
         {
             Name = "Kraken (Low)",
@@ -103,13 +91,8 @@ local CONFIG = {
         }
     },
     
-    -- DISCORD WEBHOOK
     DISCORD_WEBHOOK = "https://discord.com/api/webhooks/1497331954293674106/4U2_9j_TmEhmkC4Ig3NR_UDega-2c0t4KP3gnw-bNpbxNkRYfa9wcY0J-XF4ETBvCRg1",
-    
-    -- TARGET GAME TO JOIN IF NOTHING FOUND
     TARGET_PLACE_ID = 77747658251236,
-    
-    -- SCAN SETTINGS
     SCAN_INTERVAL = 3,
     SCANS_BEFORE_JUMP = 2,
     SCAN_DELAY_ON_JOIN = 4,
@@ -122,6 +105,8 @@ if syn and syn.request then
     httpRequest = syn.request
 elseif request then
     httpRequest = request
+elseif http and http.request then
+    httpRequest = http.request
 end
 
 -- ==================== GET PLAYER COUNT ====================
@@ -137,7 +122,6 @@ local function getServerTime()
     local serverTimeUI = playerGui:FindFirstChild("ServerTimeUI")
     if not serverTimeUI then return os.date("%H:%M:%S") end
     
-    -- Try ServerInfo.AutoSizeHolder.ServerTime
     local serverInfo = serverTimeUI:FindFirstChild("ServerInfo")
     if serverInfo then
         local autoSizeHolder = serverInfo:FindFirstChild("AutoSizeHolder")
@@ -145,32 +129,23 @@ local function getServerTime()
             local serverTime = autoSizeHolder:FindFirstChild("ServerTime")
             if serverTime and (serverTime:IsA("TextLabel") or serverTime:IsA("TextButton")) then
                 local text = serverTime.Text
-                if text and text ~= "" then
-                    return text
-                end
+                if text and text ~= "" then return text end
             end
         end
     end
     
-    -- Try ServerTimeClient
     local timeClient = serverTimeUI:FindFirstChild("ServerTimeClient")
     if timeClient and (timeClient:IsA("TextLabel") or timeClient:IsA("TextButton")) then
         local text = timeClient.Text
-        if text and text ~= "" then
-            return text
-        end
+        if text and text ~= "" then return text end
     end
     
-    -- Try ServerTimeClient_v1_BEFORE_X3_EVENTS
     local timeClientV1 = serverTimeUI:FindFirstChild("ServerTimeClient_v1_BEFORE_X3_EVENTS")
     if timeClientV1 and (timeClientV1:IsA("TextLabel") or timeClientV1:IsA("TextButton")) then
         local text = timeClientV1.Text
-        if text and text ~= "" then
-            return text
-        end
+        if text and text ~= "" then return text end
     end
     
-    -- Fallback
     for _, descendant in ipairs(serverTimeUI:GetDescendants()) do
         if (descendant:IsA("TextLabel") or descendant:IsA("TextButton")) and descendant.Text and descendant.Text ~= "" then
             local text = descendant.Text
@@ -210,15 +185,27 @@ local function checkNPC(target)
     return instance ~= nil
 end
 
--- ==================== DISCORD FUNCTIONS ====================
+-- ==================== DISCORD FUNCTIONS (WITH RATE LIMIT HANDLING) ====================
 local lastSend = {}
 local lastJumpSend = 0
+local discordRateLimit = false
 
 local function sendFoundDiscord(npcName)
-    if not httpRequest then return end
+    if not httpRequest then 
+        print("[Discord] No HTTP function available")
+        return 
+    end
+    
+    if discordRateLimit then
+        print("[Discord] Rate limited, skipping...")
+        return
+    end
     
     local now = os.time()
-    if lastSend[npcName] and (now - lastSend[npcName]) < 60 then return end
+    if lastSend[npcName] and (now - lastSend[npcName]) < 60 then 
+        print("[Discord] Cooldown for " .. npcName)
+        return 
+    end
     lastSend[npcName] = now
     
     local playerCount = getPlayerCount()
@@ -247,14 +234,33 @@ local function sendFoundDiscord(npcName)
     }
     
     local payload = {username = "👾 NPC HUNTER 👾", embeds = {embed}}
-    pcall(function()
-        httpRequest({Url = CONFIG.DISCORD_WEBHOOK, Method = "POST", Headers = {["Content-Type"] = "application/json"}, Body = HttpService:JSONEncode(payload)})
-        print("[Discord] ✅ Sent: " .. npcName)
+    
+    local success, response = pcall(function()
+        return httpRequest({
+            Url = CONFIG.DISCORD_WEBHOOK,
+            Method = "POST",
+            Headers = {["Content-Type"] = "application/json"},
+            Body = HttpService:JSONEncode(payload)
+        })
     end)
+    
+    if success then
+        print("[Discord] ✅ Sent: " .. npcName)
+        discordRateLimit = false
+    else
+        print("[Discord] ❌ Failed: " .. tostring(response))
+        if tostring(response):find("429") then
+            discordRateLimit = true
+            task.wait(5)
+            discordRateLimit = false
+        end
+    end
 end
 
 local function sendJumpDiscord()
     if not httpRequest then return end
+    if discordRateLimit then return end
+    
     local now = os.time()
     if (now - lastJumpSend) < 30 then return end
     lastJumpSend = now
@@ -289,7 +295,12 @@ local function sendJumpDiscord()
     
     local payload = {username = "👾 NPC HUNTER 👾", embeds = {embed}}
     pcall(function()
-        httpRequest({Url = CONFIG.DISCORD_WEBHOOK, Method = "POST", Headers = {["Content-Type"] = "application/json"}, Body = HttpService:JSONEncode(payload)})
+        httpRequest({
+            Url = CONFIG.DISCORD_WEBHOOK,
+            Method = "POST",
+            Headers = {["Content-Type"] = "application/json"},
+            Body = HttpService:JSONEncode(payload)
+        })
         print("[Discord] 🔄 Jumping to " .. CONFIG.TARGET_PLACE_ID)
     end)
 end
@@ -385,22 +396,27 @@ local function showStatus(message)
     gui:Destroy()
 end
 
+-- ==================== HEARTBEAT KEEPER (PREVENTS SCRIPT DEATH) ====================
+local lastHeartbeat = tick()
+RunService.Heartbeat:Connect(function()
+    lastHeartbeat = tick()
+end)
+
 -- ==================== MAIN LOOP ====================
 local scanCount = 0
 
 local function start()
     print("=" .. string.rep("=", 70))
-    print("👾 NPC HUNTER — ALL 3 TARGETS (Kraken, Cosmic Being, Sea Serpent) 👾")
+    print("👾 NPC HUNTER — PERSISTENT AUTO-EXECUTE (FIXED) 👾")
     print(string.rep("=", 70))
     for _, target in ipairs(CONFIG.TARGETS) do
         print(string.format("  🎯 %s", target.Name))
     end
     print(string.format("[Target Game ID] %d", CONFIG.TARGET_PLACE_ID))
-    print(string.format("[Auto-Execute URL] %s", SCRIPT_URL))
-    print(string.format("[Auto-Execute Status] %s", (queue_on_teleport_func and USE_URL_AUTOEXECUTE) and "ACTIVE ✅" or "INACTIVE ❌"))
+    print(string.format("[Auto-Execute] PERSISTENT — will reload EVERY time"))
     print("=" .. string.rep("=", 70))
     
-    showStatus("👾 NPC HUNTER ACTIVE — Scanning for Kraken, Cosmic Being, Sea Serpent")
+    showStatus("👾 NPC HUNTER ACTIVE — Persistent auto-execute enabled")
     task.wait(CONFIG.SCAN_DELAY_ON_JOIN)
     
     while true do
@@ -430,5 +446,20 @@ local function start()
     end
 end
 
-pcall(start)
-while true do task.wait(1) end
+-- Run with error recovery
+local function runWithRecovery()
+    local success, err = pcall(start)
+    if not success then
+        print("[NPC Hunter] CRASHED: " .. tostring(err))
+        print("[NPC Hunter) Restarting in 5 seconds...")
+        task.wait(5)
+        runWithRecovery()
+    end
+end
+
+runWithRecovery()
+
+-- Keep alive
+while true do
+    task.wait(1)
+end
