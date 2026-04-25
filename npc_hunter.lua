@@ -1,5 +1,5 @@
 --[[
-    NPC HUNTER — 5 SECOND HOP DELAY
+    NPC HUNTER — 10 SECOND DELAY + BEAUTIFUL DISCORD EMBEDS
     GitHub: https://raw.githubusercontent.com/f2playelias-lab/Sailor-Piece/refs/heads/main/npc_hunter.lua
 ]]
 
@@ -20,8 +20,8 @@ local TARGET_PLACE_ID = 77747658251236
 
 local SCAN_INTERVAL = 3
 local SCANS_BEFORE_JUMP = 2
-local MIN_HOP_DELAY = 10         -- ← CHANGED: Minimum 5 seconds before hopping
-local MAX_HOP_DELAY = 8          -- ← NEW: Random delay up to 8 seconds (optional)
+local MIN_HOP_DELAY = 10          -- ← 10 seconds minimum before hopping
+local MAX_HOP_DELAY = 10          -- ← Set to same value for exact timing
 
 -- ==================== TRACK SENT NOTIFICATIONS ====================
 local sentThisSession = {}
@@ -44,34 +44,110 @@ else
     print("[HTTP] ⚠️ WARNING: No HTTP function found!")
 end
 
--- ==================== DISCORD FUNCTION ====================
+-- ==================== GET SERVER TIME ====================
+local function getServerTime()
+    local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
+    if not playerGui then return os.date("%H:%M:%S") end
+    
+    local serverTimeUI = playerGui:FindFirstChild("ServerTimeUI")
+    if not serverTimeUI then return os.date("%H:%M:%S") end
+    
+    -- Try ServerInfo.AutoSizeHolder.ServerTime
+    local serverInfo = serverTimeUI:FindFirstChild("ServerInfo")
+    if serverInfo then
+        local autoSizeHolder = serverInfo:FindFirstChild("AutoSizeHolder")
+        if autoSizeHolder then
+            local serverTime = autoSizeHolder:FindFirstChild("ServerTime")
+            if serverTime and (serverTime:IsA("TextLabel") or serverTime:IsA("TextButton")) then
+                local text = serverTime.Text
+                if text and text ~= "" then return text end
+            end
+        end
+    end
+    
+    -- Try ServerTimeClient
+    local timeClient = serverTimeUI:FindFirstChild("ServerTimeClient")
+    if timeClient and (timeClient:IsA("TextLabel") or timeClient:IsA("TextButton")) then
+        local text = timeClient.Text
+        if text and text ~= "" then return text end
+    end
+    
+    -- Try ServerTimeClient_v1_BEFORE_X3_EVENTS
+    local timeClientV1 = serverTimeUI:FindFirstChild("ServerTimeClient_v1_BEFORE_X3_EVENTS")
+    if timeClientV1 and (timeClientV1:IsA("TextLabel") or timeClientV1:IsA("TextButton")) then
+        local text = timeClientV1.Text
+        if text and text ~= "" then return text end
+    end
+    
+    -- Fallback
+    for _, descendant in ipairs(serverTimeUI:GetDescendants()) do
+        if (descendant:IsA("TextLabel") or descendant:IsA("TextButton")) and descendant.Text and descendant.Text ~= "" then
+            local text = descendant.Text
+            if text:match("%d+:%d+") or text:match("%d+") then
+                return text
+            end
+        end
+    end
+    
+    return os.date("%H:%M:%S")
+end
+
+-- ==================== GET GAME NAME ====================
+local function getGameName()
+    local success, info = pcall(function()
+        return game:GetService("MarketplaceService"):GetProductInfo(game.PlaceId)
+    end)
+    if success and info then
+        return info.Name
+    end
+    return "Unknown Game"
+end
+
+-- ==================== BEAUTIFUL DISCORD EMBED FUNCTION ====================
 local lastSendTime = 0
 local lastMessageHash = ""
 
-local function sendDiscord(message, isJump)
+local function sendDiscordEmbed(title, description, color, fields, thumbnailUrl)
     if not httpRequest then
         print("[Discord] Cannot send - no HTTP")
         return false
     end
     
-    local messageHash = tostring(#message) .. message:sub(1, 50)
+    -- Create message hash to prevent duplicates
+    local messageHash = title .. tostring(#description) .. tostring(#fields)
     if messageHash == lastMessageHash then
         print("[Discord] Duplicate message blocked")
         return false
     end
     lastMessageHash = messageHash
     
+    -- Rate limiting
     local now = os.time()
     if now - lastSendTime < 5 then
-        print("[Discord] Rate limited, waiting...")
         task.wait(3)
     end
     lastSendTime = now
     
+    local embed = {
+        title = title,
+        description = description,
+        color = color,
+        fields = fields,
+        footer = {
+            text = "NPC Hunter | " .. os.date("%Y-%m-%d %H:%M:%S UTC"),
+            icon_url = "https://www.roblox.com/headshot-thumbnail/image?userId=1&width=420&height=420&format=png"
+        },
+        timestamp = os.date("!%Y-%m-%dT%H:%M:%SZ")
+    }
+    
+    if thumbnailUrl then
+        embed.thumbnail = {url = thumbnailUrl}
+    end
+    
     local payload = {
-        content = message,
-        username = "NPC Hunter",
-        avatar_url = "https://www.roblox.com/headshot-thumbnail/image?userId=1&width=420&height=420&format=png"
+        username = "🎯 NPC HUNTER",
+        avatar_url = "https://www.roblox.com/headshot-thumbnail/image?userId=1&width=420&height=420&format=png",
+        embeds = {embed}
     }
     
     local success, err = pcall(function()
@@ -84,12 +160,84 @@ local function sendDiscord(message, isJump)
     end)
     
     if success then
-        print("[Discord] ✅ Sent")
+        print("[Discord] ✅ Embed sent")
         return true
     else
         print("[Discord] ❌ Failed: " .. tostring(err))
         return false
     end
+end
+
+-- ==================== SEND NPC FOUND EMBED ====================
+local function sendFoundEmbed(npcName)
+    sentThisSession[npcName] = true
+    
+    local playerCount = #Players:GetPlayers()
+    local serverTime = getServerTime()
+    local gameName = getGameName()
+    
+    local emoji = ""
+    local color = 0x00FF00
+    local thumbnail = ""
+    
+    if npcName:find("Kraken") then
+        emoji = "🐙"
+        color = 0x3498DB
+        thumbnail = "https://static.wikia.nocookie.net/roblox/images/3/3a/Kraken.png"
+    elseif npcName:find("Cosmic") then
+        emoji = "🌌"
+        color = 0x9B59B6
+        thumbnail = "https://static.wikia.nocookie.net/roblox/images/6/6c/Cosmic_Being.png"
+    elseif npcName:find("Sea Serpent") then
+        emoji = "🐍"
+        color = 0x1ABC9C
+        thumbnail = "https://static.wikia.nocookie.net/roblox/images/5/5e/Sea_Serpent.png"
+    else
+        emoji = "👾"
+        color = 0x00FF00
+    end
+    
+    local title = string.format("%s **%s** %s", emoji, npcName, emoji)
+    local description = string.format("**%s** found a rare NPC in the server!", LocalPlayer.Name)
+    
+    local fields = {
+        {name = "👾 NPC", value = npcName, inline = true},
+        {name = "👤 Player", value = LocalPlayer.Name, inline = true},
+        {name = "👥 Players Online", value = tostring(playerCount), inline = true},
+        {name = "⏰ Server Time", value = serverTime, inline = true},
+        {name = "🎮 Game", value = gameName, inline = false},
+        {name = "🌐 Server ID", value = string.format("`%s`", string.sub(game.JobId, 1, 20) .. "..."), inline = false},
+    }
+    
+    print(string.rep("!", 50))
+    print(npcName .. " FOUND! - Sending Discord embed...")
+    print(string.rep("!", 50))
+    
+    sendDiscordEmbed(title, description, color, fields, thumbnail)
+end
+
+-- ==================== SEND HOPPING EMBED ====================
+local function sendHoppingEmbed(delay)
+    local playerCount = #Players:GetPlayers()
+    local serverTime = getServerTime()
+    local gameName = getGameName()
+    
+    local title = "🔄 **SERVER HOPPING** 🔄"
+    local description = string.format("No target NPCs found in **%s**.\nHopping to a new server in **%d seconds**.", gameName, delay)
+    local color = 0xF39C12
+    
+    local fields = {
+        {name = "🔍 Targets Searched", value = "• Kraken (Low)\n• Cosmic Being Boss\n• Sea Serpent", inline = false},
+        {name = "👤 Player", value = LocalPlayer.Name, inline = true},
+        {name = "👥 Players in Server", value = tostring(playerCount), inline = true},
+        {name = "⏰ Server Time", value = serverTime, inline = true},
+        {name = "🎮 Target Game ID", value = string.format("`%d`", TARGET_PLACE_ID), inline = true},
+        {name = "🌐 Current Server", value = string.format("`%s`", string.sub(game.JobId, 1, 24) .. "..."), inline = false},
+        {name = "⏱️ Hop Timer", value = string.format("Hopping in **%d seconds**...", delay), inline = true},
+    }
+    
+    print("[Discord] Sending hopping embed...")
+    sendDiscordEmbed(title, description, color, fields)
 end
 
 -- ==================== RESET SESSION TRACKING ====================
@@ -117,83 +265,59 @@ local function checkForNPCs()
         
         if childName == "Kraken" then
             local krakenLow = child:FindFirstChild("kraken_low")
-            if krakenLow then
-                if not sentThisSession["Kraken (Low)"] then
-                    table.insert(found, "Kraken (Low)")
-                end
-            else
-                if not sentThisSession["Kraken"] then
-                    table.insert(found, "Kraken")
-                end
+            if krakenLow and not sentThisSession["Kraken (Low)"] then
+                table.insert(found, "Kraken (Low)")
+            elseif not sentThisSession["Kraken"] then
+                table.insert(found, "Kraken")
             end
         end
         
-        if childName == "CosmicBeingBoss_Normal" or childName == "CosmicBeingBoss" then
-            if not sentThisSession["Cosmic Being Boss"] then
-                table.insert(found, "Cosmic Being Boss")
-            end
+        if (childName == "CosmicBeingBoss_Normal" or childName == "CosmicBeingBoss") and not sentThisSession["Cosmic Being Boss"] then
+            table.insert(found, "Cosmic Being Boss")
         end
         
-        if childName == "Sea Serpent" or childName == "SeaSerpent" then
-            if not sentThisSession["Sea Serpent"] then
-                table.insert(found, "Sea Serpent")
-            end
+        if (childName == "Sea Serpent" or childName == "SeaSerpent") and not sentThisSession["Sea Serpent"] then
+            table.insert(found, "Sea Serpent")
         end
     end
     
     return found
 end
 
--- ==================== JUMP TO GAME (WITH MINIMUM 5 SECOND DELAY) ====================
+-- ==================== JUMP TO GAME (WITH 10 SECOND DELAY) ====================
 local function jumpToTargetGame()
     print(string.rep("=", 60))
     print("[Jump] No NPCs found! Preparing to jump...")
     print(string.format("[Jump] Target Game ID: %d", TARGET_PLACE_ID))
     print(string.rep("=", 60))
     
-    -- Calculate hop delay (minimum 5 seconds, can add randomness)
     local hopDelay = MIN_HOP_DELAY
-    if MAX_HOP_DELAY > MIN_HOP_DELAY then
-        hopDelay = math.random(MIN_HOP_DELAY, MAX_HOP_DELAY)
-    end
     print(string.format("[Jump] Waiting %d seconds before hopping...", hopDelay))
     
-    -- Only send hop notification once per session
+    -- Send hopping embed to Discord (only once per session)
     if not hopSentThisSession then
         hopSentThisSession = true
-        local playerCount = #Players:GetPlayers()
-        local message = string.format(
-            "🔄 **NO NPCS FOUND — JUMPING IN %d SECONDS** 🔄\n" ..
-            "👤 Player: %s\n" ..
-            "👥 Players in server: %d\n" ..
-            "🎮 Jumping to game ID: %d\n" ..
-            "🌐 Leaving server: %s",
-            hopDelay,
-            LocalPlayer.Name,
-            playerCount,
-            TARGET_PLACE_ID,
-            string.sub(game.JobId, 1, 16)
-        )
-        sendDiscord(message, true)
+        sendHoppingEmbed(hopDelay)
     end
     
-    -- Create progress bar GUI for the delay
+    -- Create countdown GUI
     local gui = Instance.new("ScreenGui")
     gui.Name = "HopCountdown"
     gui.ResetOnSpawn = false
     gui.Parent = game:GetService("CoreGui")
     
     local frame = Instance.new("Frame")
-    frame.Size = UDim2.new(0, 500, 0, 80)
+    frame.Size = UDim2.new(0, 500, 0, 100)
     frame.Position = UDim2.new(0.5, -250, 0.7, 0)
-    frame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-    frame.BackgroundTransparency = 0.2
+    frame.BackgroundColor3 = Color3.fromRGB(20, 20, 30)
+    frame.BackgroundTransparency = 0.1
     frame.BorderSizePixel = 0
     frame.Parent = gui
     
+    -- Title
     local title = Instance.new("TextLabel")
-    title.Size = UDim2.new(1, 0, 0, 30)
-    title.Position = UDim2.new(0, 0, 0, 5)
+    title.Size = UDim2.new(1, 0, 0, 35)
+    title.Position = UDim2.new(0, 0, 0, 10)
     title.BackgroundTransparency = 1
     title.Text = "🔄 NO NPCS FOUND — HOPPING SOON 🔄"
     title.TextColor3 = Color3.fromRGB(255, 200, 0)
@@ -201,25 +325,38 @@ local function jumpToTargetGame()
     title.Font = Enum.Font.GothamBold
     title.Parent = frame
     
+    -- Server time display
+    local timeDisplay = Instance.new("TextLabel")
+    timeDisplay.Size = UDim2.new(1, 0, 0, 25)
+    timeDisplay.Position = UDim2.new(0, 0, 0, 45)
+    timeDisplay.BackgroundTransparency = 1
+    timeDisplay.Text = string.format("⏰ Server Time: %s", getServerTime())
+    timeDisplay.TextColor3 = Color3.fromRGB(200, 200, 200)
+    timeDisplay.TextScaled = true
+    timeDisplay.Font = Enum.Font.Gotham
+    timeDisplay.Parent = frame
+    
+    -- Countdown
     local countdownText = Instance.new("TextLabel")
-    countdownText.Size = UDim2.new(1, 0, 0, 40)
-    countdownText.Position = UDim2.new(0, 0, 0, 35)
+    countdownText.Size = UDim2.new(1, 0, 0, 35)
+    countdownText.Position = UDim2.new(0, 0, 0, 65)
     countdownText.BackgroundTransparency = 1
     countdownText.Text = string.format("Jumping in %d seconds...", hopDelay)
     countdownText.TextColor3 = Color3.fromRGB(255, 255, 255)
     countdownText.TextScaled = true
-    countdownText.Font = Enum.Font.Gotham
+    countdownText.Font = Enum.Font.GothamBold
     countdownText.Parent = frame
     
-    -- Countdown loop
+    -- Update server time and countdown
     for i = hopDelay, 1, -1 do
         countdownText.Text = string.format("Jumping in %d seconds...", i)
+        timeDisplay.Text = string.format("⏰ Server Time: %s", getServerTime())
         task.wait(1)
     end
     
     gui:Destroy()
     
-    -- Final notification before teleport
+    -- Final notification
     local finalGui = Instance.new("ScreenGui")
     finalGui.ResetOnSpawn = false
     finalGui.Parent = game:GetService("CoreGui")
@@ -233,7 +370,7 @@ local function jumpToTargetGame()
     
     local finalText = Instance.new("TextLabel")
     finalText.Size = UDim2.new(1, 0, 1, 0)
-    finalText.Text = "🚀 JUMPING TO NEW SERVER NOW... 🚀"
+    finalText.Text = "🚀 JUMPING TO NEW GAME... 🚀"
     finalText.TextColor3 = Color3.fromRGB(0, 255, 0)
     finalText.TextScaled = true
     finalText.Font = Enum.Font.GothamBold
@@ -255,39 +392,6 @@ local function jumpToTargetGame()
             LocalPlayer:Kick("Jumping to " .. TARGET_PLACE_ID)
         end)
     end
-end
-
--- ==================== SEND FOUND NOTIFICATION ====================
-local function sendFoundNotification(npcName)
-    sentThisSession[npcName] = true
-    
-    local playerCount = #Players:GetPlayers()
-    local serverTime = os.date("%H:%M:%S")
-    
-    local emoji = "👾"
-    if npcName:find("Kraken") then emoji = "🐙"
-    elseif npcName:find("Cosmic") then emoji = "🌌"
-    elseif npcName:find("Sea Serpent") then emoji = "🐍"
-    end
-    
-    local message = string.format(
-        "%s **%s FOUND!** %s\n" ..
-        "👤 Player: %s\n" ..
-        "👥 Players: %d\n" ..
-        "⏰ Time: %s\n" ..
-        "🌐 Server: %s",
-        emoji, npcName, emoji,
-        LocalPlayer.Name,
-        playerCount,
-        serverTime,
-        string.sub(game.JobId, 1, 16)
-    )
-    
-    print(string.rep("!", 50))
-    print(npcName .. " FOUND! - Sending Discord...")
-    print(string.rep("!", 50))
-    
-    sendDiscord(message, false)
 end
 
 -- ==================== AUTO-EXECUTE SETUP ====================
@@ -321,11 +425,11 @@ local scanCount = 0
 
 local function main()
     print("=" .. string.rep("=", 60))
-    print("👾 NPC HUNTER — 5 SECOND HOP DELAY 👾")
+    print("👾 NPC HUNTER — 10 SECOND HOP DELAY + BEAUTIFUL EMBEDS 👾")
     print(string.rep("=", 60))
     print("[Targets] Kraken | Cosmic Being | Sea Serpent")
     print(string.format("[Target Game ID] %d", TARGET_PLACE_ID))
-    print(string.format("[Min Hop Delay] %d seconds", MIN_HOP_DELAY))
+    print(string.format("[Hop Delay] %d seconds", MIN_HOP_DELAY))
     print(string.format("[HTTP] %s", httpRequest and "✅" or "❌"))
     print("=" .. string.rep("=", 60))
     
@@ -341,15 +445,15 @@ local function main()
     statusGui.Parent = game:GetService("CoreGui")
     
     local statusFrame = Instance.new("Frame")
-    statusFrame.Size = UDim2.new(0, 350, 0, 50)
-    statusFrame.Position = UDim2.new(0.5, -175, 0, 10)
+    statusFrame.Size = UDim2.new(0, 400, 0, 60)
+    statusFrame.Position = UDim2.new(0.5, -200, 0, 10)
     statusFrame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
     statusFrame.BackgroundTransparency = 0.3
     statusFrame.Parent = statusGui
     
     local statusText = Instance.new("TextLabel")
     statusText.Size = UDim2.new(1, 0, 1, 0)
-    statusText.Text = "👾 NPC HUNTER ACTIVE\nWill wait 5+ seconds before hopping"
+    statusText.Text = "👾 NPC HUNTER ACTIVE\n⏰ Will wait 10 seconds before hopping"
     statusText.TextColor3 = Color3.fromRGB(0, 255, 0)
     statusText.TextScaled = true
     statusText.Font = Enum.Font.GothamBold
@@ -361,13 +465,15 @@ local function main()
     
     while true do
         scanCount = scanCount + 1
+        local currentTime = getServerTime()
         print(string.format("\n[Scan #%d] Server: %s", scanCount, string.sub(game.JobId, 1, 20)))
+        print(string.format("[Scan #%d] Server Time: %s", scanCount, currentTime))
         
         local found = checkForNPCs()
         
         if #found > 0 then
             for _, npc in ipairs(found) do
-                sendFoundNotification(npc)
+                sendFoundEmbed(npc)
             end
             print(string.format("[Result] ✅ Found %d NPC(s)! Staying.", #found))
             scanCount = 0
