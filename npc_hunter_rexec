@@ -1,5 +1,5 @@
--- NPC HUNTER — NO AUTO-EXECUTE
--- You must manually re-run the script after each teleport
+-- NPC HUNTER — NO AUTO-EXECUTE (WITH RETRY)
+-- If teleport fails, keeps trying to find another server
 -- URL: https://raw.githubusercontent.com/f2playelias-lab/Sailor-Piece/refs/heads/main/npc_hunter_rexec
 
 local Players = game:GetService("Players")
@@ -108,7 +108,7 @@ end
 local function findNewServer()
     local url = "https://games.roblox.com/v1/games/" .. TARGET_PLACE .. "/servers/Public?sortOrder=Asc&limit=100"
     local cursor = nil
-    for _ = 1, 5 do
+    for attempt = 1, 5 do
         local u = url .. (cursor and "&cursor=" .. cursor or "")
         local s, d = pcall(function() return game:HttpGet(u) end)
         if s then
@@ -133,54 +133,88 @@ local function findNewServer()
     return nil
 end
 
-local function doHop()
-    print("Searching for new server...")
-    local newServer = findNewServer()
-    if not newServer then
-        print("No new servers found, clearing blacklist")
-        visitedServers = {}
-        newServer = findNewServer()
-    end
-    if newServer then
-        visitedServers[newServer] = true
-        local pc = #Players:GetPlayers()
-        local st = getServerTime()
-        local gn = getGameName()
-        local fields = {
-            {name = "Players", value = tostring(pc), inline = true},
-            {name = "Server Time", value = st, inline = true},
-            {name = "Game", value = gn, inline = false},
-            {name = "New Server", value = string.sub(newServer, 1, 20) .. "...", inline = false}
-        }
-        if not hopSent then
-            hopSent = true
-            sendDiscord(WEBHOOK_HOP, "Server Hopping", "No NPCs found. Teleporting...", 0xF39C12, fields)
+-- NEW: Retry function that keeps trying until success
+local function doHopWithRetry()
+    local maxRetries = 999  -- Keep trying indefinitely
+    local retryCount = 0
+    
+    while retryCount < maxRetries do
+        retryCount = retryCount + 1
+        print(string.format("[Hop Attempt %d] Searching for new server...", retryCount))
+        
+        local newServer = findNewServer()
+        
+        if not newServer then
+            print("[Hop] No new servers found via API, clearing blacklist and retrying...")
+            visitedServers = {}
+            newServer = findNewServer()
         end
-        local gui = Instance.new("ScreenGui")
-        gui.ResetOnSpawn = false
-        gui.Parent = game:GetService("CoreGui")
-        local f = Instance.new("Frame")
-        f.Size = UDim2.new(0, 400, 0, 60)
-        f.Position = UDim2.new(0.5, -200, 0.7, 0)
-        f.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-        f.BackgroundTransparency = 0.3
-        f.Parent = gui
-        local t = Instance.new("TextLabel")
-        t.Size = UDim2.new(1, 0, 1, 0)
-        t.Text = "Hopping in " .. HOP_DELAY .. " seconds..."
-        t.TextColor3 = Color3.fromRGB(255, 200, 0)
-        t.TextScaled = true
-        t.Parent = f
-        for i = HOP_DELAY, 1, -1 do
-            t.Text = "Hopping in " .. i .. " seconds..."
-            task.wait(1)
+        
+        if newServer then
+            visitedServers[newServer] = true
+            local pc = #Players:GetPlayers()
+            local st = getServerTime()
+            local gn = getGameName()
+            local fields = {
+                {name = "Players", value = tostring(pc), inline = true},
+                {name = "Server Time", value = st, inline = true},
+                {name = "Game", value = gn, inline = false},
+                {name = "Target Server", value = string.sub(newServer, 1, 20) .. "...", inline = false},
+                {name = "Attempt", value = tostring(retryCount), inline = true}
+            }
+            if not hopSent then
+                hopSent = true
+                sendDiscord(WEBHOOK_HOP, "Server Hopping", "No NPCs found. Teleporting...", 0xF39C12, fields)
+            end
+            
+            -- Countdown GUI
+            local gui = Instance.new("ScreenGui")
+            gui.ResetOnSpawn = false
+            gui.Parent = game:GetService("CoreGui")
+            local f = Instance.new("Frame")
+            f.Size = UDim2.new(0, 450, 0, 80)
+            f.Position = UDim2.new(0.5, -225, 0.7, 0)
+            f.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+            f.BackgroundTransparency = 0.3
+            f.Parent = gui
+            local t = Instance.new("TextLabel")
+            t.Size = UDim2.new(1, 0, 1, 0)
+            t.Text = "🔄 HOPPING TO NEW SERVER\nin " .. HOP_DELAY .. " seconds..."
+            t.TextColor3 = Color3.fromRGB(255, 200, 0)
+            t.TextScaled = true
+            t.Font = Enum.Font.GothamBold
+            t.Parent = f
+            
+            for i = HOP_DELAY, 1, -1 do
+                t.Text = "🔄 HOPPING TO NEW SERVER\nin " .. i .. " seconds..."
+                task.wait(1)
+            end
+            gui:Destroy()
+            
+            -- Attempt teleport
+            local teleportSuccess, err = pcall(function()
+                TeleportService:TeleportToPlaceInstance(TARGET_PLACE, newServer, LocalPlayer)
+            end)
+            
+            if teleportSuccess then
+                print("[Hop] Teleport initiated successfully!")
+                return true
+            else
+                print("[Hop] Teleport failed: " .. tostring(err))
+                print("[Hop] Server may no longer exist. Retrying with different server...")
+                -- Mark this server as bad so we don't try it again
+                visitedServers[newServer] = true
+                -- Don't send hopSent again for retries
+                task.wait(3)
+                -- Continue loop to try another server
+            end
+        else
+            print("[Hop] No servers available at all. Waiting 10 seconds before retry...")
+            task.wait(10)
         end
-        gui:Destroy()
-        pcall(function()
-            TeleportService:TeleportToPlaceInstance(TARGET_PLACE, newServer, LocalPlayer)
-        end)
-        return true
     end
+    
+    print("[Hop] CRITICAL: Failed to find any working server after many attempts.")
     return false
 end
 
@@ -188,7 +222,7 @@ local function main()
     print("=" .. string.rep("=", 50))
     print("NPC Hunter Active (NO AUTO-EXECUTE)")
     print("Target: " .. TARGET_PLACE)
-    print("NOTE: You must manually re-run the script after each teleport")
+    print("NOTE: Will keep retrying if teleport fails")
     print("=" .. string.rep("=", 50))
 
     visitedServers[game.JobId] = true
@@ -226,10 +260,14 @@ local function main()
         else
             print("No NPCs found")
             if scanCount >= SCANS_BEFORE_HOP then
-                if doHop() then
-                    print("Teleported! Re-run the script manually to continue.")
-                    break
+                print("Starting hop sequence...")
+                local hopResult = doHopWithRetry()
+                if hopResult then
+                    print("Teleport initiated! Script will stop. Re-run manually after teleport.")
+                else
+                    print("CRITICAL: Hop failed repeatedly. Check your connection or target game ID.")
                 end
+                break
             else
                 task.wait(SCAN_INTERVAL)
             end
