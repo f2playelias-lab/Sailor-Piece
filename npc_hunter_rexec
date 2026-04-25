@@ -1,0 +1,241 @@
+-- NPC HUNTER — NO AUTO-EXECUTE
+-- You must manually re-run the script after each teleport
+-- GitHub: https://raw.githubusercontent.com/f2playelias-lab/Sailor-Piece/refs/heads/main/npc_hunter.lua
+
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+local TeleportService = game:GetService("TeleportService")
+local HttpService = game:GetService("HttpService")
+
+local SCRIPT_URL = "https://raw.githubusercontent.com/f2playelias-lab/Sailor-Piece/refs/heads/main/npc_hunter.lua"
+
+local WEBHOOK_BOSS = "https://discord.com/api/webhooks/1497670528562106520/WD70NS5pQpu_yydzViBQlFmFlqWIPqkaxRW_y7PaYDhu4e10Nukc8pS5-jkDszB5stNM"
+local WEBHOOK_HOP = "https://discord.com/api/webhooks/1497670647768285204/3LSIn5KhjsF5u1C6jqX_DOf_D1p6J6B5o8JGa1uWMR0pykushvy7S5SV_Hj6Q4rX86ZJ"
+
+local TARGET_PLACE = 77747658251236
+local SCAN_INTERVAL = 3
+local SCANS_BEFORE_HOP = 2
+local HOP_DELAY = 10
+
+local visitedServers = {}
+local sentNPCs = {}
+local hopSent = false
+local scanCount = 0
+
+local http = nil
+if syn and syn.request then
+    http = syn.request
+elseif request then
+    http = request
+end
+
+local function getServerTime()
+    local pg = LocalPlayer:FindFirstChild("PlayerGui")
+    if not pg then return os.date("%H:%M:%S") end
+    local stUI = pg:FindFirstChild("ServerTimeUI")
+    if not stUI then return os.date("%H:%M:%S") end
+    local si = stUI:FindFirstChild("ServerInfo")
+    if si then
+        local ash = si:FindFirstChild("AutoSizeHolder")
+        if ash then
+            local st = ash:FindFirstChild("ServerTime")
+            if st and (st:IsA("TextLabel") or st:IsA("TextButton")) then
+                local txt = st.Text
+                if txt and txt ~= "" then return txt end
+            end
+        end
+    end
+    for _, d in ipairs(stUI:GetDescendants()) do
+        if (d:IsA("TextLabel") or d:IsA("TextButton")) and d.Text and d.Text ~= "" then
+            if d.Text:match("%d+:%d+") then
+                return d.Text
+            end
+        end
+    end
+    return os.date("%H:%M:%S")
+end
+
+local function getGameName()
+    local s, i = pcall(function()
+        return game:GetService("MarketplaceService"):GetProductInfo(game.PlaceId)
+    end)
+    if s and i then return i.Name end
+    return "Unknown"
+end
+
+local function sendDiscord(webhook, title, desc, color, fields, script)
+    if not http then return end
+    local embed = {title = title, description = desc, color = color, fields = fields}
+    local payload = {username = "NPC Hunter", embeds = {embed}}
+    if script then
+        payload.content = "```lua\n" .. script .. "\n```"
+    end
+    pcall(function()
+        http({Url = webhook, Method = "POST", Headers = {["Content-Type"] = "application/json"}, Body = HttpService:JSONEncode(payload)})
+    end)
+end
+
+local function generateScript(pid, jid)
+    return 'game:GetService("TeleportService"):TeleportToPlaceInstance(' .. pid .. ', "' .. jid .. '")'
+end
+
+local function checkNPCs()
+    local found = {}
+    local npcs = workspace:FindFirstChild("NPCs")
+    if not npcs then return found end
+    for _, c in ipairs(npcs:GetChildren()) do
+        local n = c.Name
+        if n == "Kraken" then
+            local kl = c:FindFirstChild("kraken_low")
+            if kl and not sentNPCs["KrakenLow"] then
+                table.insert(found, "Kraken (Low)")
+            elseif not sentNPCs["Kraken"] then
+                table.insert(found, "Kraken")
+            end
+        elseif n == "CosmicBeingBoss_Normal" or n == "CosmicBeingBoss" then
+            if not sentNPCs["CosmicBeing"] then
+                table.insert(found, "Cosmic Being Boss")
+            end
+        elseif n == "Sea Serpent" or n == "SeaSerpent" then
+            if not sentNPCs["SeaSerpent"] then
+                table.insert(found, "Sea Serpent")
+            end
+        end
+    end
+    return found
+end
+
+local function findNewServer()
+    local url = "https://games.roblox.com/v1/games/" .. TARGET_PLACE .. "/servers/Public?sortOrder=Asc&limit=100"
+    local cursor = nil
+    for _ = 1, 5 do
+        local u = url .. (cursor and "&cursor=" .. cursor or "")
+        local s, d = pcall(function() return game:HttpGet(u) end)
+        if s then
+            local ok, data = pcall(function() return HttpService:JSONDecode(d) end)
+            if ok and data and data.data then
+                local available = {}
+                for _, sv in ipairs(data.data) do
+                    if sv.playing < sv.maxPlayers and not visitedServers[sv.id] then
+                        table.insert(available, sv)
+                    end
+                end
+                if #available > 0 then
+                    local chosen = available[math.random(1, #available)]
+                    return chosen.id
+                end
+                cursor = data.nextPageCursor
+                if not cursor then break end
+            end
+        end
+        task.wait(1)
+    end
+    return nil
+end
+
+local function doHop()
+    print("Searching for new server...")
+    local newServer = findNewServer()
+    if not newServer then
+        print("No new servers found, clearing blacklist")
+        visitedServers = {}
+        newServer = findNewServer()
+    end
+    if newServer then
+        visitedServers[newServer] = true
+        local pc = #Players:GetPlayers()
+        local st = getServerTime()
+        local gn = getGameName()
+        local fields = {
+            {name = "Players", value = tostring(pc), inline = true},
+            {name = "Server Time", value = st, inline = true},
+            {name = "Game", value = gn, inline = false},
+            {name = "New Server", value = string.sub(newServer, 1, 20) .. "...", inline = false}
+        }
+        if not hopSent then
+            hopSent = true
+            sendDiscord(WEBHOOK_HOP, "Server Hopping", "No NPCs found. Teleporting...", 0xF39C12, fields)
+        end
+        local gui = Instance.new("ScreenGui")
+        gui.ResetOnSpawn = false
+        gui.Parent = game:GetService("CoreGui")
+        local f = Instance.new("Frame")
+        f.Size = UDim2.new(0, 400, 0, 60)
+        f.Position = UDim2.new(0.5, -200, 0.7, 0)
+        f.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+        f.BackgroundTransparency = 0.3
+        f.Parent = gui
+        local t = Instance.new("TextLabel")
+        t.Size = UDim2.new(1, 0, 1, 0)
+        t.Text = "Hopping in " .. HOP_DELAY .. " seconds..."
+        t.TextColor3 = Color3.fromRGB(255, 200, 0)
+        t.TextScaled = true
+        t.Parent = f
+        for i = HOP_DELAY, 1, -1 do
+            t.Text = "Hopping in " .. i .. " seconds..."
+            task.wait(1)
+        end
+        gui:Destroy()
+        pcall(function()
+            TeleportService:TeleportToPlaceInstance(TARGET_PLACE, newServer, LocalPlayer)
+        end)
+        return true
+    end
+    return false
+end
+
+local function main()
+    print("=" .. string.rep("=", 50))
+    print("NPC Hunter Active (NO AUTO-EXECUTE)")
+    print("Target: " .. TARGET_PLACE)
+    print("NOTE: You must manually re-run the script after each teleport")
+    print("=" .. string.rep("=", 50))
+    
+    visitedServers[game.JobId] = true
+    task.wait(4)
+    
+    while true do
+        scanCount = scanCount + 1
+        local st = getServerTime()
+        print(string.format("[Scan %d] Server: %s", scanCount, string.sub(game.JobId, 1, 16)))
+        print(string.format("[Scan %d] Time: %s", scanCount, st))
+        
+        local found = checkNPCs()
+        
+        if #found > 0 then
+            for _, npc in ipairs(found) do
+                sentNPCs[npc] = true
+                local pc = #Players:GetPlayers()
+                local gn = getGameName()
+                local pid = game.PlaceId
+                local jid = game.JobId
+                local script = generateScript(pid, jid)
+                local fields = {
+                    {name = "NPC", value = npc, inline = true},
+                    {name = "Players", value = tostring(pc), inline = true},
+                    {name = "Server Time", value = st, inline = true},
+                    {name = "Game", value = gn, inline = false},
+                    {name = "Place ID", value = tostring(pid), inline = true},
+                    {name = "Server ID", value = string.sub(jid, 1, 16) .. "...", inline = false}
+                }
+                sendDiscord(WEBHOOK_BOSS, npc .. " Spawned!", "A " .. npc .. " has been found!", 0x00FF00, fields, script)
+                print("Found: " .. npc)
+            end
+            scanCount = 0
+            task.wait(SCAN_INTERVAL * 2)
+        else
+            print("No NPCs found")
+            if scanCount >= SCANS_BEFORE_HOP then
+                if doHop() then
+                    print("Teleported! Re-run the script manually to continue.")
+                    break
+                end
+            else
+                task.wait(SCAN_INTERVAL)
+            end
+        end
+    end
+end
+
+pcall(main)
+while true do task.wait(1) end
